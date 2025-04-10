@@ -22,10 +22,11 @@ def load_trends():
 df = load_data()
 trends_data = load_trends()
 sectors = sorted(df['Sectors'].unique())
+company_list = df['Company Name'].unique()
 
-view_mode = st.radio("View Mode", ["Top 5 by Sector", "Search by Company"], horizontal=True)
-
-display_mode = st.radio("Display Mode", ["% Change vs. 12 Months Ago", "Absolute Search Interest"], horizontal=True)
+# UI controls
+view_mode = st.radio("📊 View Mode", ["Top 5 by Sector", "Search by Company"], horizontal=True)
+display_mode = st.radio("📈 Display Mode", ["% Change vs. 12 Months Ago", "Absolute Search Interest"], horizontal=True)
 
 if view_mode == "Top 5 by Sector":
     for sector in sectors:
@@ -37,16 +38,15 @@ if view_mode == "Top 5 by Sector":
 
         top5 = df[(df['Sectors'] == sector) & (df['Company Name'].isin(company_names))]
 
-        with st.expander(f"📊 {sector} – Top 5 Companies by Market Cap", expanded=False):
+        with st.expander(f"📦 {sector} – Top 5 Companies by Market Cap", expanded=False):
             fig = go.Figure()
             for company in company_names:
                 values = sector_data[company]
-                if display_mode == "% Change vs. 12 Months Ago" and len(values) > 1:
-                    start = values[0] or 1e-6
-                    values = [(v - start) / start * 100 if start else 0 for v in values]
+                if display_mode.startswith("%") and len(values) > 1:
+                    base = values[0] or 1e-6
+                    values = [(v - base) / base * 100 if base else 0 for v in values]
                 fig.add_trace(go.Scatter(
-                    x=dates, y=values,
-                    mode='lines', name=company
+                    x=dates, y=values, mode='lines', name=company
                 ))
             fig.update_layout(
                 height=400,
@@ -61,29 +61,25 @@ if view_mode == "Top 5 by Sector":
                 st.markdown(desc)
 
 else:
-    company_list = df['Company Name'].unique()
-    search_input = st.text_input("Search for a Company")
-    matches = [c for c in company_list if search_input.lower() in c.lower()]
+    st.markdown("### 🔍 Search by Company")
+    search_input = st.text_input("Type to search...").strip()
+    if search_input:
+        filtered = [c for c in company_list if search_input.lower() in c.lower()]
+        if filtered:
+            company = st.selectbox("Matching Companies", filtered)
+            sector = df[df['Company Name'] == company]['Sectors'].values[0]
+            desc = df[df['Company Name'] == company]['Formatted Description'].values[0]
 
-    if matches:
-        company = st.selectbox("Matching Companies", matches)
-        sector = df[df['Company Name'] == company]['Sectors'].values[0]
-        description = df[df['Company Name'] == company]['Formatted Description'].values[0]
-
-        # Try to find the data in the trends JSON
-        trends = trends_data.get(sector, {})
-        if company in trends:
-            values = trends[company]
-            dates = trends["dates"]
-            if display_mode == "% Change vs. 12 Months Ago" and len(values) > 1:
-                base = values[0] or 1e-6
-                values = [(v - base) / base * 100 if base else 0 for v in values]
-
-            st.subheader(f"{company} ({sector})")
-            st.markdown(description)
-            st.line_chart(pd.DataFrame({company: values}, index=pd.to_datetime(dates)))
+            if sector in trends_data and company in trends_data[sector]:
+                values = trends_data[sector][company]
+                dates = trends_data[sector]["dates"]
+                if display_mode.startswith("%") and len(values) > 1:
+                    base = values[0] or 1e-6
+                    values = [(v - base) / base * 100 if base else 0 for v in values]
+                st.subheader(f"{company} ({sector})")
+                st.markdown(desc)
+                st.line_chart(pd.DataFrame({company: values}, index=pd.to_datetime(dates)))
+            else:
+                st.warning("No trend data available for this company.")
         else:
-            st.warning("No trend data available for this company.")
-    else:
-        if search_input:
-            st.warning("No matches found.")
+            st.warning("No matching companies found.")
